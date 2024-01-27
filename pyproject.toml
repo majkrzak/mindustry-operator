@@ -1,0 +1,12 @@
+[project]
+name = "mindustry-operator"
+version = "0.0.0"
+dependencies = ["kopf"]
+authors = [{ name = "Piotr Majkrzak", email = "piotr@majkrzak.dev" }]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"mindustry_operator" = "./src/"
