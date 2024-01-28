@@ -1,7 +1,14 @@
 import kopf
+import time
 from kubernetes.stream import stream
 from kubernetes.client import (
     CoreV1Api,
+    ApiextensionsV1Api,
+    V1CustomResourceDefinition,
+    V1CustomResourceDefinitionSpec,
+    V1CustomResourceDefinitionNames,
+    V1CustomResourceDefinitionVersion,
+    V1CustomResourceValidation,
     V1PersistentVolumeClaim,
     V1Pod,
     V1PersistentVolumeClaimSpec,
@@ -17,14 +24,60 @@ from kubernetes.client import (
     V1ServiceSpec,
     V1ObjectMeta,
     V1ServicePort,
+    V1JSONSchemaProps,
 )
 from .const import (
     API_GROUP,
     API_VERSION,
     API_SERVER_PLURAL,
+    API_SERVER_SINGULAR,
+    API_SERVER_KIND,
     RELEASES_URI,
     LABEL,
 )
+from .model import ServerSpecs
+
+
+def build_crd():
+    crd = V1CustomResourceDefinition(
+        metadata=V1ObjectMeta(name=f"{API_SERVER_PLURAL}.{API_GROUP}"),
+        spec=V1CustomResourceDefinitionSpec(
+            group=API_GROUP,
+            names=V1CustomResourceDefinitionNames(
+                kind=API_SERVER_KIND,
+                singular=API_SERVER_SINGULAR,
+                plural=API_SERVER_PLURAL,
+            ),
+            scope="Namespaced",
+            versions=[
+                V1CustomResourceDefinitionVersion(
+                    name=API_VERSION,
+                    served=True,
+                    storage=True,
+                    schema=V1CustomResourceValidation(
+                        open_apiv3_schema=V1JSONSchemaProps(
+                            type="object",
+                            properties={
+                                "spec": ServerSpecs.SCHEMA,
+                            },
+                        ),
+                    ),
+                ),
+            ],
+        ),
+    )
+    ApiextensionsV1Api().create_custom_resource_definition(crd)
+
+
+@kopf.on.create(
+    "",
+    "v1",
+    "pod",
+    when=lambda name, namespace, **_: (name, namespace)
+    == ("mindustry-operator", "kube-system"),
+)
+def on_startup(**_):
+    build_crd()
 
 
 def adopt(name: str, entity):
@@ -37,9 +90,7 @@ def build_pvc(name: str) -> V1PersistentVolumeClaim:
     pvc = adopt(
         name,
         V1PersistentVolumeClaim(
-            metadata=V1ObjectMeta(
-                name=name,
-            ),
+            metadata=V1ObjectMeta(name=name),
             spec=V1PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteOnce"],
                 resources=V1VolumeResourceRequirements(requests={"storage": "1Gi"}),
@@ -55,9 +106,7 @@ def build_pod(name: str, version: str) -> V1Pod:
     pod = adopt(
         name,
         V1Pod(
-            metadata=V1ObjectMeta(
-                name=name,
-            ),
+            metadata=V1ObjectMeta(name=name),
             spec=V1PodSpec(
                 init_containers=[
                     V1Container(
@@ -145,9 +194,7 @@ def build_svc(name: str, external_i_ps: [str], external_port: int):
     service = adopt(
         name,
         V1Service(
-            metadata=V1ObjectMeta(
-                name=name,
-            ),
+            metadata=V1ObjectMeta(name=name),
             spec=V1ServiceSpec(
                 selector={LABEL: name},
                 external_i_ps=external_i_ps,
@@ -172,14 +219,10 @@ def build_svc(name: str, external_i_ps: [str], external_port: int):
 
 
 @kopf.on.create(API_GROUP, API_VERSION, API_SERVER_PLURAL)
-def on_create(name: str, spec: kopf.Spec, **_):
-    version: str = spec["version"]
-    external_i_ps: [str] = spec["externalIPs"]
-    external_port: int = spec["externalPort"]
-
+def on_create(name: str, spec: ServerSpecs, **_):
     build_pvc(name)
-    build_pod(name, version)
-    build_svc(name, external_i_ps, external_port)
+    build_pod(name, spec.version)
+    build_svc(name, spec.external_i_ps, spec.external_port)
 
 
 @kopf.on.update(
