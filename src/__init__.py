@@ -1,7 +1,18 @@
 import kopf
-from kubernetes.client.api import CoreV1Api
 from kubernetes.stream import stream
-from kubernetes.client.models import V1PersistentVolumeClaim, V1Pod
+from kubernetes.client import (
+    CoreV1Api,
+    V1PersistentVolumeClaim,
+    V1Pod,
+    V1PersistentVolumeClaimSpec,
+    V1VolumeResourceRequirements,
+    V1PodSpec,
+    V1Container,
+    V1VolumeMount,
+    V1Volume,
+    V1EmptyDirVolumeSource,
+    V1PersistentVolumeClaimVolumeSource,
+)
 import logging
 from .const import (
     API_GROUP,
@@ -13,30 +24,26 @@ from .const import (
 
 
 def build_pvc() -> V1PersistentVolumeClaim:
-    pvc = {
-        "apiVersion": "v1",
-        "kind": "PersistentVolumeClaim",
-        "spec": {
-            "accessModes": ["ReadWriteOnce"],
-            "resources": {"requests": {"storage": "1Gi"}},
-        },
-    }
+    pvc: kopf = V1PersistentVolumeClaim(
+        spec=V1PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            resources=V1VolumeResourceRequirements(requests={"storage": "1Gi"}),
+        )
+    )
     kopf.adopt(pvc)
     return CoreV1Api().create_namespaced_persistent_volume_claim(
-        pvc["metadata"]["namespace"], pvc
+        pvc.metadata.namespace, pvc
     )
 
 
 def build_pod(version: str, pvc_name: str) -> V1Pod:
-    pod = {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "spec": {
-            "initContainers": [
-                {
-                    "name": "installer",
-                    "image": "alpine:latest",
-                    "command": [
+    pod = V1Pod(
+        spec=V1PodSpec(
+            init_containers=[
+                V1Container(
+                    name="installer",
+                    image="alpine:latest",
+                    command=[
                         "/bin/sh",
                         "-c",
                         "\n".join(
@@ -51,33 +58,50 @@ def build_pod(version: str, pvc_name: str) -> V1Pod:
                             ]
                         ),
                     ],
-                    "volumeMounts": [
-                        {"name": "server", "mountPath": "/opt/mindustry/"}
+                    volume_mounts=[
+                        V1VolumeMount(
+                            name="server",
+                            mount_path="/opt/mindustry/",
+                        )
                     ],
-                }
+                )
             ],
-            "containers": [
-                {
-                    "name": "server",
-                    "image": "openjdk:17-slim",
-                    "workingDir": "/opt/mindustry/",
-                    "command": ["java"],
-                    "args": ["-jar", "/opt/mindustry/server-release.jar"],
-                    "stdin": True,
-                    "volumeMounts": [
-                        {"name": "server", "mountPath": "/opt/mindustry/"},
-                        {"name": "config", "mountPath": "/opt/mindustry/config/"},
+            containers=[
+                V1Container(
+                    name="server",
+                    image="openjdk:17-slim",
+                    working_dir="/opt/mindustry/",
+                    command=["java"],
+                    args=["-jar", "/opt/mindustry/server-release.jar"],
+                    stdin=True,
+                    volume_mounts=[
+                        V1VolumeMount(
+                            name="server",
+                            mount_path="/opt/mindustry/",
+                        ),
+                        V1VolumeMount(
+                            name="config",
+                            mount_path="/opt/mindustry/config",
+                        ),
                     ],
-                }
+                ),
             ],
-            "volumes": [
-                {"name": "server", "emptyDir": {}},
-                {"name": "config", "persistentVolumeClaim": {"claimName": pvc_name}},
+            volumes=[
+                V1Volume(
+                    name="server",
+                    empty_dir=V1EmptyDirVolumeSource(),
+                ),
+                V1Volume(
+                    name="config",
+                    persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                        claim_name=pvc_name
+                    ),
+                ),
             ],
-        },
-    }
+        )
+    )
     kopf.adopt(pod)
-    return CoreV1Api().create_namespaced_pod(pod["metadata"]["namespace"], pod)
+    return CoreV1Api().create_namespaced_pod(pod.metadata.namespace, pod)
 
 
 @kopf.on.create(API_GROUP, API_VERSION, API_SERVER_PLURAL)
