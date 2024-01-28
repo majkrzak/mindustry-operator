@@ -1,0 +1,7 @@
+---
+apiVersion: mindustry.operator/dev
+kind: Server
+metadata:
+  name: mindustry-test
+spec:
+  version: v146

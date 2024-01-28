@@ -1,7 +1,7 @@
 [project]
 name = "mindustry-operator"
 version = "0.0.0"
-dependencies = ["kopf"]
+dependencies = ["kopf", "kubernetes"]
 authors = [{ name = "Piotr Majkrzak", email = "piotr@majkrzak.dev" }]
 
 [build-system]

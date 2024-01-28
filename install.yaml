@@ -46,7 +46,7 @@ spec:
     - -c
     - |
       . /venv/bin/activate
-      kopf run --all-namespaces -m mindustry_operator
+      kopf run --verbose --all-namespaces -m mindustry_operator
     volumeMounts:
     - mountPath: /venv
       name: venv
