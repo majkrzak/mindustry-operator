@@ -1,5 +1,7 @@
 API_GROUP = "mindustry.operator"
 API_VERSION = "dev"
 API_SERVER_KIND = "Server"
+API_SERVER_SINGULAR = "server"
 API_SERVER_PLURAL = "servers"
 RELEASES_URI = "https://github.com/Anuken/Mindustry/releases/download/"
+LABEL = f"{API_GROUP}/{API_SERVER_SINGULAR}"

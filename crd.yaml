@@ -23,3 +23,9 @@ spec:
             properties:
               version:
                 type: string
+              externalIPs:
+                type: array
+                items:
+                  type: string
+              externalPort:
+                type: integer

@@ -12,120 +12,181 @@ from kubernetes.client import (
     V1Volume,
     V1EmptyDirVolumeSource,
     V1PersistentVolumeClaimVolumeSource,
+    V1ContainerPort,
+    V1Service,
+    V1ServiceSpec,
+    V1ObjectMeta,
+    V1ServicePort,
 )
-import logging
 from .const import (
     API_GROUP,
     API_VERSION,
     API_SERVER_PLURAL,
-    API_SERVER_KIND,
     RELEASES_URI,
+    LABEL,
 )
 
 
-def build_pvc() -> V1PersistentVolumeClaim:
-    pvc: kopf = V1PersistentVolumeClaim(
-        spec=V1PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            resources=V1VolumeResourceRequirements(requests={"storage": "1Gi"}),
-        )
+def adopt(name: str, entity):
+    kopf.label(entity, {LABEL: name})
+    kopf.adopt(entity)
+    return entity
+
+
+def build_pvc(name: str) -> V1PersistentVolumeClaim:
+    pvc = adopt(
+        name,
+        V1PersistentVolumeClaim(
+            metadata=V1ObjectMeta(
+                name=name,
+            ),
+            spec=V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                resources=V1VolumeResourceRequirements(requests={"storage": "1Gi"}),
+            ),
+        ),
     )
-    kopf.adopt(pvc)
     return CoreV1Api().create_namespaced_persistent_volume_claim(
         pvc.metadata.namespace, pvc
     )
 
 
-def build_pod(version: str, pvc_name: str) -> V1Pod:
-    pod = V1Pod(
-        spec=V1PodSpec(
-            init_containers=[
-                V1Container(
-                    name="installer",
-                    image="alpine:latest",
-                    command=[
-                        "/bin/sh",
-                        "-c",
-                        "\n".join(
-                            [
-                                " ".join(
-                                    [
-                                        "wget",
-                                        f"{RELEASES_URI}{version}/server-release.jar",
-                                        "-O /opt/mindustry/server-release.jar",
-                                    ]
-                                )
-                            ]
-                        ),
-                    ],
-                    volume_mounts=[
-                        V1VolumeMount(
-                            name="server",
-                            mount_path="/opt/mindustry/",
-                        )
-                    ],
-                )
-            ],
-            containers=[
-                V1Container(
-                    name="server",
-                    image="openjdk:17-slim",
-                    working_dir="/opt/mindustry/",
-                    command=["java"],
-                    args=["-jar", "/opt/mindustry/server-release.jar"],
-                    stdin=True,
-                    volume_mounts=[
-                        V1VolumeMount(
-                            name="server",
-                            mount_path="/opt/mindustry/",
-                        ),
-                        V1VolumeMount(
-                            name="config",
-                            mount_path="/opt/mindustry/config",
-                        ),
-                    ],
-                ),
-            ],
-            volumes=[
-                V1Volume(
-                    name="server",
-                    empty_dir=V1EmptyDirVolumeSource(),
-                ),
-                V1Volume(
-                    name="config",
-                    persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
-                        claim_name=pvc_name
+def build_pod(name: str, version: str) -> V1Pod:
+    pod = adopt(
+        name,
+        V1Pod(
+            metadata=V1ObjectMeta(
+                name=name,
+            ),
+            spec=V1PodSpec(
+                init_containers=[
+                    V1Container(
+                        name="installer",
+                        image="alpine:latest",
+                        command=[
+                            "/bin/sh",
+                            "-c",
+                            "\n".join(
+                                [
+                                    " ".join(
+                                        [
+                                            "wget",
+                                            f"{RELEASES_URI}{version}/server-release.jar",
+                                            "-O /opt/mindustry/server-release.jar",
+                                        ]
+                                    )
+                                ]
+                            ),
+                        ],
+                        volume_mounts=[
+                            V1VolumeMount(
+                                name="server",
+                                mount_path="/opt/mindustry/",
+                            )
+                        ],
+                    )
+                ],
+                containers=[
+                    V1Container(
+                        name="server",
+                        image="openjdk:17-slim",
+                        working_dir="/opt/mindustry/",
+                        command=["java"],
+                        args=["-jar", "/opt/mindustry/server-release.jar"],
+                        stdin=True,
+                        volume_mounts=[
+                            V1VolumeMount(
+                                name="server",
+                                mount_path="/opt/mindustry/",
+                            ),
+                            V1VolumeMount(
+                                name="config",
+                                mount_path="/opt/mindustry/config",
+                            ),
+                        ],
+                        ports=[
+                            V1ContainerPort(
+                                name="tcp",
+                                container_port=6567,
+                                protocol="TCP",
+                            ),
+                            V1ContainerPort(
+                                name="udp",
+                                container_port=6567,
+                                protocol="UDP",
+                            ),
+                            V1ContainerPort(
+                                name="adm",
+                                container_port=6569,
+                                protocol="TCP",
+                            ),
+                        ],
                     ),
-                ),
-            ],
-        )
+                ],
+                volumes=[
+                    V1Volume(
+                        name="server",
+                        empty_dir=V1EmptyDirVolumeSource(),
+                    ),
+                    V1Volume(
+                        name="config",
+                        persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                            claim_name=name
+                        ),
+                    ),
+                ],
+            ),
+        ),
     )
-    kopf.adopt(pod)
     return CoreV1Api().create_namespaced_pod(pod.metadata.namespace, pod)
 
 
+def build_svc(name: str, external_i_ps: [str], external_port: int):
+    service = adopt(
+        name,
+        V1Service(
+            metadata=V1ObjectMeta(
+                name=name,
+            ),
+            spec=V1ServiceSpec(
+                selector={LABEL: name},
+                external_i_ps=external_i_ps,
+                ports=[
+                    V1ServicePort(
+                        name="tcp",
+                        protocol="TCP",
+                        port=external_port,
+                        target_port="tcp",
+                    ),
+                    V1ServicePort(
+                        name="udp",
+                        protocol="UDP",
+                        port=external_port,
+                        target_port="udp",
+                    ),
+                ],
+            ),
+        ),
+    )
+    return CoreV1Api().create_namespaced_service(service.metadata.namespace, service)
+
+
 @kopf.on.create(API_GROUP, API_VERSION, API_SERVER_PLURAL)
-def on_create(spec: kopf.Spec, **_):
-    pvc = build_pvc()
-    pod = build_pod(spec["version"], pvc.metadata.name)
-    logging.debug(f"Created: {[pvc, pod]!r}")
+def on_create(name: str, spec: kopf.Spec, **_):
+    version: str = spec["version"]
+    external_i_ps: [str] = spec["externalIPs"]
+    external_port: int = spec["externalPort"]
 
-
-def is_server_pod(meta: kopf.Meta, **_) -> bool:
-    for ownerReference in meta.get("ownerReferences") or []:
-        if (
-            ownerReference["kind"] == API_SERVER_KIND
-            and ownerReference["apiVersion"] == f"{API_GROUP}/{API_VERSION}"
-        ):
-            return True
-    return False
+    build_pvc(name)
+    build_pod(name, version)
+    build_svc(name, external_i_ps, external_port)
 
 
 @kopf.on.update(
     "",
     "v1",
     "pods",
-    when=is_server_pod,
+    labels={LABEL: kopf.PRESENT},
     field="status.phase",
     old="Pending",
     new="Running",
@@ -142,5 +203,16 @@ def on_pod_(name: str, namespace: str, **_):
         _preload_content=False,
     )
     connection.update(timeout=1)
-    connection.write_stdin("host\n")
+    connection.write_stdin(
+        "\n".join(
+            [
+                "config port 6567",
+                "config socketInputPort 6569",
+                "config socketInputAddress 0.0.0.0",
+                "config socketInput true",
+                "host",
+                "",
+            ]
+        )
+    )
     connection.close()
