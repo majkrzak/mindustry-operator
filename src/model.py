@@ -25,3 +25,11 @@ class ServerSpecs(Spec):
     @property
     def external_port(self) -> int:
         return self.get("externalPort")
+
+    @classmethod
+    def cast(cls, f):
+        def decorator(spec: Spec, **kwargs):
+            spec.__class__ = cls
+            return f(spec=spec, **kwargs)
+
+        return decorator

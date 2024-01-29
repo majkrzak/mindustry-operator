@@ -1,5 +1,4 @@
 import kopf
-import time
 from kubernetes.stream import stream
 from kubernetes.client import (
     CoreV1Api,
@@ -219,6 +218,7 @@ def build_svc(name: str, external_i_ps: [str], external_port: int):
 
 
 @kopf.on.create(API_GROUP, API_VERSION, API_SERVER_PLURAL)
+@ServerSpecs.cast
 def on_create(name: str, spec: ServerSpecs, **_):
     build_pvc(name)
     build_pod(name, spec.version)
